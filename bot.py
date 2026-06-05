@@ -9,7 +9,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 TOKEN = os.getenv('TOKEN')
-ID_CARGO_PRIMES = '1470900284644397217' 
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -36,6 +35,7 @@ db = carregar_dados()
 
 @bot.event
 async def on_ready():
+    # Sincroniza todos os comandos com o Discord
     synced = await bot.tree.sync()
     print(f'Bot {bot.user} online! {len(synced)} comandos sincronizados.')
 

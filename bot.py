@@ -1,165 +1,111 @@
-import os
 import discord
-import json
-import random
-import asyncio
 from discord import app_commands
 from discord.ext import commands
+import os
 from dotenv import load_dotenv
 
+# Carrega o token do arquivo .env
 load_dotenv()
 TOKEN = os.getenv('TOKEN')
 
 intents = discord.Intents.default()
 intents.message_content = True
-intents.members = True 
+bot = commands.Bot(command_prefix="!", intents=intents)
 
-bot = commands.Bot(command_prefix='!', intents=intents)
+# Banco de dados de jogadores
+db = {"partidas": [], "jogadores": {}}
 
-# --- BANCO DE DADOS ---
-ARQUIVO_DADOS = 'dados_primes.json'
-
-def carregar_dados():
-    if os.path.exists(ARQUIVO_DADOS):
-        try:
-            with open(ARQUIVO_DADOS, 'r') as f:
-                return json.load(f)
-        except: pass
-    return {"jogadores": {}, "titulos": [], "partidas": [], "elenco_log": [], "aniversarios": {}}
-
-def salvar_dados(dados):
-    with open(ARQUIVO_DADOS, 'w') as f:
-        json.dump(dados, f, indent=4)
-
-db = carregar_dados()
+def salvar_dados(db):
+    pass
 
 @bot.event
 async def on_ready():
-    # Sincroniza todos os comandos com o Discord
-    synced = await bot.tree.sync()
-    print(f'Bot {bot.user} online! {len(synced)} comandos sincronizados.')
+    await bot.tree.sync()
+    print(f'Bot {bot.user} online! Comandos sincronizados.')
 
-# --- SISTEMA DE BOTÕES ---
-class ConfirmacaoPartida(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)
+# --- COMANDOS DO PRIMES FC ---
+
+@bot.tree.command(name="perfil", description="Mostra as estatísticas do seu perfil")
+async def perfil(interaction: discord.Interaction, jogador: discord.Member = None):
+    target = jogador or interaction.user
+    uid = str(target.id)
+    data = db["jogadores"].get(uid, {"gols": 0, "mvps": 0})
     
-    @discord.ui.button(label="Vou", style=discord.ButtonStyle.green)
-    async def vou(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message(f"{interaction.user.name} confirmou presença!", ephemeral=True)
+    embed = discord.Embed(title=f"👤 Perfil de {target.display_name}", color=discord.Color.gold())
+    embed.add_field(name="⚽ Gols", value=data["gols"], inline=True)
+    embed.add_field(name="🏆 MVPs", value=data["mvps"], inline=True)
+    
+    file = discord.File("primes fc icone.png", filename="icone.png")
+    embed.set_thumbnail(url="attachment://icone.png")
+    await interaction.response.send_message(embed=embed, file=file)
 
-# --- COMANDOS ---
+@bot.tree.command(name="ranking", description="Mostra o ranking de gols do Primes FC")
+async def ranking(interaction: discord.Interaction):
+    # Ordena jogadores por gols
+    sorted_players = sorted(db["jogadores"].items(), key=lambda x: x[1]["gols"], reverse=True)
+    desc = "\n".join([f"{i+1}. {p[1].get('nome', 'Jogador')} - {p[1]['gols']} gols" for i, p in enumerate(sorted_players[:10])])
+    
+    embed = discord.Embed(title="📊 Ranking de Artilheiros - Primes FC", description=desc or "Nenhum dado ainda.", color=discord.Color.blue())
+    await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="result", description="Registra o resultado visual de uma partida")
-@app_commands.describe(adversario="Nome do time adversário", placar="Ex: 17-4", stats="Estatísticas (use \\n para quebrar)", mvp="MVP", runner_up="Segundo colocado")
-async def result(interaction: discord.Interaction, adversario: str, placar: str, stats: str, mvp: str, runner_up: str):
-    stats_formatado = stats.replace('\\n', '\n')
-    mensagem = (
-        f"🏆 **AMISTOSO — @Primes FC** ⚽\n\n"
-        f"📟 **PLACAR**\n"
-        f"Primes FC {placar} {adversario}\n\n"
-        f"📊 **STATS**\n"
-        f"{stats_formatado}\n\n"
-        f"🥇 **MVP: {mvp}**\n"
-        f"🥈 **RUNNER UP: {runner_up}**"
+@bot.tree.command(name="regras", description="Mostra as regras oficiais do Primes FC")
+async def regras(interaction: discord.Interaction):
+    regras_texto = (
+        "**📜 REGRAS OFICIAIS — @Primes FC**\n\n"
+        "**1. Identidade**: Time independente; proibido parcerias.\n"
+        "**2. Comportamento**: Respeito obrigatório.\n"
+        "**3. Compromisso**: Comparecer a treinos/partidas.\n"
+        "**4. Hierarquia**: Respeitar decisões da liderança.\n"
+        "**5. Avaliações**: Novos jogadores passam por avaliação.\n"
+        "**6. Jogos**: Seriedade e respeito aos adversários.\n"
+        "**7. Divulgação**: Proibido divulgar outros times.\n"
+        "**8. Penalidades**: Advertências, afastamento ou remoção.\n"
+        "**9. Disposições**: Regras podem ser atualizadas."
     )
-    await interaction.response.send_message(mensagem)
+    await interaction.response.send_message(regras_texto)
 
-@bot.tree.command(name="perfil", description="Veja suas estatísticas ou de um jogador")
-async def perfil(interaction: discord.Interaction, usuario: discord.Member = None):
-    alvo = usuario or interaction.user
-    uid = str(alvo.id)
-    if uid not in db["jogadores"]:
-        db["jogadores"][uid] = {"nome": alvo.display_name, "gols": 0, "assist": 0, "saves": 0, "mvps": 0}
-        salvar_dados(db)
-    p = db["jogadores"][uid]
-    embed = discord.Embed(title=f"👤 Perfil de {p['nome']}", color=discord.Color.green())
-    embed.add_field(name="⚽ Gols", value=p['gols'], inline=True)
-    embed.add_field(name="🎯 Assistências", value=p['assist'], inline=True)
-    embed.add_field(name="🧤 Saves", value=p['saves'], inline=True)
-    embed.add_field(name="🏆 MVPs", value=p.get('mvps', 0), inline=True)
-    embed.set_thumbnail(url=alvo.display_avatar.url)
-    await interaction.response.send_message(embed=embed)
+@bot.tree.command(name="escalacao", description="Cria a escalação oficial do Primes FC")
+async def escalacao(interaction: discord.Interaction, goleiro: discord.Member, linha1: discord.Member, linha2: discord.Member, linha3: discord.Member):
+    embed = discord.Embed(title="📋 ESCALAÇÃO OFICIAL - PRIMES FC", description="Aqui estão os titulares:", color=discord.Color.green())
+    file = discord.File("primes fc icone.png", filename="icone.png")
+    embed.set_thumbnail(url="attachment://icone.png")
+    embed.add_field(name="🧤 GOLEIRO", value=f"**{goleiro.mention}**", inline=False)
+    embed.add_field(name="⚽ JOGADORES DE LINHA", value=f"1. **{linha1.mention}**\n2. **{linha2.mention}**\n3. **{linha3.mention}**", inline=False)
+    await interaction.response.send_message(embed=embed, file=file)
 
-@bot.tree.command(name="atualizar-stats", description="Atualiza Gols, Assists ou Saves")
-@app_commands.choices(categoria=[app_commands.Choice(name="Gols", value="gols"), app_commands.Choice(name="Assistências", value="assist"), app_commands.Choice(name="Saves", value="saves")])
-async def atualizar_stats(interaction: discord.Interaction, jogador: discord.Member, categoria: app_commands.Choice[str], valor: int):
-    uid = str(jogador.id)
-    if uid not in db["jogadores"]:
-        db["jogadores"][uid] = {"nome": jogador.display_name, "gols": 0, "assist": 0, "saves": 0, "mvps": 0}
-    db["jogadores"][uid][categoria.value] = valor
-    salvar_dados(db)
-    await interaction.response.send_message(f"✅ {jogador.display_name}: {categoria.name} definido para {valor}.")
-
-@bot.tree.command(name="ranking-geral", description="Visão geral de Gols, Assists, Saves e MVPs")
-async def ranking_geral(interaction: discord.Interaction):
-    jogadores = db["jogadores"]
-    gols = sorted(jogadores.items(), key=lambda x: x[1].get("gols", 0), reverse=True)[:3]
-    ast = sorted(jogadores.items(), key=lambda x: x[1].get("assist", 0), reverse=True)[:3]
-    sav = sorted(jogadores.items(), key=lambda x: x[1].get("saves", 0), reverse=True)[:3]
-    mvps = sorted(jogadores.items(), key=lambda x: x[1].get("mvps", 0), reverse=True)[:3]
-    embed = discord.Embed(title="📊 RANKING GERAL - PRIMES FC", color=discord.Color.blue())
-    embed.add_field(name="⚽ Top Gols", value="\n".join([f"{i+1}. {d[1]['nome']} ({d[1]['gols']})" for i, d in enumerate(gols)]) or "Nenhum", inline=True)
-    embed.add_field(name="🎯 Top Assists", value="\n".join([f"{i+1}. {d[1]['nome']} ({d[1]['assist']})" for i, d in enumerate(ast)]) or "Nenhum", inline=True)
-    embed.add_field(name="🧤 Top Saves", value="\n".join([f"{i+1}. {d[1]['nome']} ({d[1]['saves']})" for i, d in enumerate(sav)]) or "Nenhum", inline=True)
-    embed.add_field(name="🏆 Top MVPs", value="\n".join([f"{i+1}. {d[1]['nome']} ({d[1].get('mvps', 0)})" for i, d in enumerate(mvps)]) or "Nenhum", inline=True)
-    await interaction.response.send_message(embed=embed)
-
-@bot.tree.command(name="ranking-mvp", description="Ranking detalhado de MVPs")
-async def ranking_mvp(interaction: discord.Interaction):
-    jogadores = db["jogadores"]
-    ranking = sorted(jogadores.items(), key=lambda x: x[1].get("mvps", 0), reverse=True)
-    embed = discord.Embed(title="🏆 Tabela de MVPs - Primes FC", color=discord.Color.gold())
-    texto = "\n".join([f"{i+1}º {d[1]['nome']}: {d[1].get('mvps', 0)} MVPs" for i, d in enumerate(ranking[:10])])
-    embed.description = texto if texto else "Nenhum MVP registrado."
-    await interaction.response.send_message(embed=embed)
-
-@bot.tree.command(name="treino", description="Inicia cronômetro de treino")
-async def treino(interaction: discord.Interaction, minutos: int):
-    await interaction.response.send_message(f"⏱️ **Treino iniciado!** Duração: {minutos} minutos.")
-    await asyncio.sleep(minutos * 60)
-    await interaction.channel.send(f"📢 **Fim do treino!**")
-
-@bot.tree.command(name="sortear-times", description="Divide os membros em 2 times")
-async def sortear_times(interaction: discord.Interaction, canal: discord.VoiceChannel):
-    membros = [m.display_name for m in canal.members]
-    if len(membros) < 2:
-        await interaction.response.send_message("❌ Precisa de pelo menos 2 pessoas!")
-        return
-    random.shuffle(membros)
-    meio = len(membros) // 2
-    await interaction.response.send_message(f"⚽ **Sorteio:**\nTime A: {', '.join(membros[:meio])}\nTime B: {', '.join(membros[meio:])}")
-
-@bot.tree.command(name="agendar-partida", description="Agenda uma partida")
-async def agendar(interaction: discord.Interaction, adversario: str, data_hora: str):
-    embed = discord.Embed(title="⚽ Nova Partida", description=f"Adversário: {adversario}\nData/Hora: {data_hora}", color=discord.Color.blue())
-    await interaction.response.send_message(embed=embed, view=ConfirmacaoPartida())
-
-@bot.tree.command(name="resultado-partida", description="Registra resultado no histórico")
-async def resultado_partida(interaction: discord.Interaction, adversario: str, nosso_placar: int, placar_eles: int):
-    res = "Vitória" if nosso_placar > placar_eles else ("Empate" if nosso_placar == placar_eles else "Derrota")
-    db["partidas"].append(f"{res}: Primes FC {nosso_placar} x {placar_eles} {adversario}")
-    salvar_dados(db)
-    await interaction.response.send_message(f"✅ Partida registrada!")
+@bot.tree.command(name="convocar", description="Convoca os jogadores para um compromisso")
+async def convocar(interaction: discord.Interaction, cargo: discord.Role, motivo: str):
+    embed = discord.Embed(title="📢 CONVOCAÇÃO - PRIMES FC", description=f"Atenção {cargo.mention}!\n\n**Motivo:** {motivo}", color=discord.Color.blue())
+    file = discord.File("primes fc icone.png", filename="icone.png")
+    embed.set_thumbnail(url="attachment://icone.png")
+    await interaction.response.send_message(embed=embed, file=file)
 
 @bot.tree.command(name="historico", description="Mostra o histórico de partidas")
 async def historico(interaction: discord.Interaction):
     txt = "\n".join(db.get("partidas", [])[-10:])
-    await interaction.response.send_message(f"📜 **HISTÓRICO**\n{txt or 'Vazio.'}")
+    await interaction.response.send_message(f"📜 **HISTÓRICO**\n{txt or 'Sem partidas recentes.'}")
 
 @bot.tree.command(name="mvp", description="Define o destaque")
-async def mvp(interaction: discord.Interaction, jogador: discord.Member, motivo: str):
+async def mvp(interaction: discord.Interaction, jogador: discord.Member):
     uid = str(jogador.id)
     if uid not in db["jogadores"]:
-        db["jogadores"][uid] = {"nome": jogador.display_name, "gols": 0, "assist": 0, "saves": 0, "mvps": 0}
-    db["jogadores"][uid]["mvps"] = db["jogadores"][uid].get("mvps", 0) + 1
+        db["jogadores"][uid] = {"nome": jogador.display_name, "gols": 0, "mvps": 0}
+    db["jogadores"][uid]["mvps"] += 1
     salvar_dados(db)
-    await interaction.response.send_message(f"🏆 {jogador.mention} é o MVP! Motivo: {motivo}")
+    await interaction.response.send_message(f"🏆 {jogador.mention} é o MVP!")
 
 @bot.tree.command(name="limpeza", description="Limpa mensagens (Admin)")
 @app_commands.checks.has_permissions(administrator=True)
 async def limpeza(interaction: discord.Interaction, quantidade: int):
     await interaction.channel.purge(limit=quantidade)
     await interaction.response.send_message("🧹 Limpeza feita!", ephemeral=True)
+
+@bot.tree.command(name="gol", description="Registra um gol para um jogador")
+async def gol(interaction: discord.Interaction, jogador: discord.Member):
+    uid = str(jogador.id)
+    if uid not in db["jogadores"]:
+        db["jogadores"][uid] = {"nome": jogador.display_name, "gols": 0, "mvps": 0}
+    db["jogadores"][uid]["gols"] += 1
+    await interaction.response.send_message(f"⚽ Gol marcado para {jogador.display_name}!")
 
 bot.run(TOKEN)
